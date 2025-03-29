@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Moon City Overlay</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+</head>
+<body>
+    <div id="map" style="width: 100%; height: 600px;"></div>
+    <input type="text" id="city-input" placeholder="Enter city name">
+    <button id="search-btn">Search</button>
+    <button id="clear-btn">Clear</button>
+    <script>
+        // Initialize the map
+        const map = L.map('map').setView([0, 0], 2);
+
+        // Add the Moon layer
+        L.tileLayer('https://planetarymaps.usgs.gov/cgi-bin/mapserv?map=/maps/moon/moon_wmts.map&SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=LRO_WAC_GLOBAL&STYLE=default&TILEMATRIXSET=Moon_Equirectangular&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png', {
+            attribution: 'USGS Astrogeology Science Center'
+        }).addTo(map);
+
+        // Global variable for city layer
+        let cityLayer = null;
+
+        // Search button event listener
+        document.getElementById('search-btn').addEventListener('click', async () => {
+            const cityName = document.getElementById('city-input').value;
+            
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${cityName}&format=json&polygon_geojson=1`);
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    alert('No results found for the city.');
+                    return;
+                }
+
+                const cityData = data[0];
+                const geojson = cityData.geojson;
+
+                if (geojson.type !== 'Polygon') {
+                    alert('City boundary is not a polygon.');
+                    return;
+                }
+
+                // Calculate Earth center
+                const coordinates = geojson.coordinates[0];
+                const earthCenterLon = coordinates.reduce((sum, coord) => sum + coord[0], 0) / coordinates.length;
+                const earthCenterLat = coordinates.reduce((sum, coord) => sum + coord[1], 0) / coordinates.length;
+
+                // Scale factor (Earth radius / Moon radius)
+                const scale = 6371 / 1737;
+
+                // Scale coordinates
+                const scaledCoordinates = coordinates.map(coord => {
+                    const scaledLon = scale * (coord[0] - earthCenterLon);
+                    const scaledLat = scale * (coord[1] - earthCenterLat);
+                    return [scaledLon, scaledLat];
+                });
+
+                // Create scaled GeoJSON
+                const scaledGeoJSON = {
+                    type: 'Polygon',
+                    coordinates: [scaledCoordinates]
+                };
+
+                // Remove existing city layer if any
+                if (cityLayer) {
+                    map.removeLayer(cityLayer);
+                }
+
+                // Create and add new city layer
+                cityLayer = L.geoJSON(scaledGeoJSON, {
+                    style: {
+                        fillOpacity: 0.5,
+                        color: 'blue',
+                        weight: 2
+                    }
+                }).addTo(map);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while fetching city data.');
+            }
+        });
+
+        // Clear button event listener
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            if (cityLayer) {
+                map.removeLayer(cityLayer);
+                cityLayer = null;
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -1,189 +1,98 @@
-Implementation Plan for a High-Resolution Moon Map with City Overlay
-This plan outlines the steps to build a simple web application that:
-Displays a high-resolution map of the Moon that users can pan and zoom, similar to a simplified Google Maps interface.
+Overview
+The web application will:
 
-Allows users to select a city on Earth and overlay its shape on the Moon map at scale, with transparency and drag functionality for exploration.
+    Display a high-resolution map of the Moon sourced from the USGS Planetary Web Mapping Services (PWMS) via its WMTS API.
+    Allow users to pan and zoom using the Leaflet JavaScript library.
+    Include a search input to select an Earth city, retrieving its boundary shape from the Nominatim API.
+    Overlay the city shape on the Moon map, scaled to represent its physical size relative to the Moon, with transparency, and fixed at the map’s center.
+    Enable users to move the underlying Moon map to compare the city size with lunar features.
+    Be hosted as a static web page on GitHub Pages.
 
-The plan is designed to be actionable immediately, using open-source tools and publicly available data.
-Data Sourcing
+This plan uses online APIs and provides exact steps, leaving coding details to the executing LLMs unless specified.
+Step-by-Step Implementation Plan
+Step 1: Set Up the Project Structure
 
-Moon Map Data
-Source: Lunar Reconnaissance Orbiter (LRO) Wide Angle Camera (WAC) Global Mosaic from NASA’s Planetary Data System (PDS) or LROC website (e.g., https://quickmap.lroc.asu.edu/).
-Resolution: 100 meters per pixel, suitable for zooming.
+    Create a new directory named moon-city-overlay on your local machine.
+    Inside the directory, create a single file named index.html to contain all HTML, CSS, and JavaScript for the application.
+    Open index.html in a text editor to begin adding the structure and code as instructed below.
 
-Action: Download the "Global Mosaic" dataset in GeoTIFF or JPEG2000 format (e.g., a large image like 10,000 x 10,000 pixels).
+Step 2: Build the HTML Structure
 
-City Shape Data
-Source: OpenStreetMap (OSM) via the Overpass API or pre-processed shapefiles from GeoFabrik (e.g., https://download.geofabrik.de/).
+    Add a basic HTML structure to index.html with:
+        A <!DOCTYPE html> declaration and <html>, <head>, and <body> tags.
+        In the <head>:
+            Set the title to "Moon City Overlay".
+            Include the Leaflet CSS from the CDN at https://unpkg.com/leaflet@1.7.1/dist/leaflet.css.
+            Include the Leaflet JavaScript from the CDN at https://unpkg.com/leaflet@1.7.1/dist/leaflet.js.
+        In the <body>:
+            Add a <div> with id="map", styled inline with width: 100%; height: 600px; for the map display.
+            Add an <input> element with type="text", id="city-input", and placeholder="Enter city name" for city selection.
+            Add a <button> with id="search-btn" and text "Search" to trigger the city search.
+            Add a <button> with id="clear-btn" and text "Clear" to remove the city overlay.
+            Add a <script> tag at the end of the body for the JavaScript logic.
 
-Action: Download boundary data for a few cities (e.g., New York, London, Tokyo) as shapefiles or query via Overpass API (use level=8 for city boundaries).
+Step 3: Initialize the Leaflet Map with the Moon Layer
 
-Data Preparation
+    Inside the <script> tag, write JavaScript to:
+        Initialize a Leaflet map with the id="map" element, centered at coordinates [0, 0] (the Moon’s center in equirectangular projection), and set the initial zoom level to 2.
+        Add a tile layer using the USGS PWMS WMTS API with the exact URL template: https://planetarymaps.usgs.gov/cgi-bin/mapserv?map=/maps/moon/moon_wmts.map&SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=LRO_WAC_GLOBAL&STYLE=default&TILEMATRIXSET=Moon_Equirectangular&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png.
+        Set the tile layer’s attribution to "USGS Astrogeology Science Center".
+        Add the tile layer to the map so it displays the Moon’s surface.
 
-Moon Map Tiling
-Tool: GDAL (Geospatial Data Abstraction Library), a free command-line tool.
+Step 4: Implement City Search and Overlay Logic
 
-Action:
-Install GDAL:
-macOS: brew install gdal
+    Declare a global variable cityLayer and initialize it to null outside any function to track the city overlay layer.
+    Add an event listener to the "Search" button (id="search-btn") that:
+        Retrieves the city name entered in the input field (id="city-input").
+        Makes an HTTP request to the Nominatim API using the URL: https://nominatim.openstreetmap.org/search?q=${cityName}&format=json&polygon_geojson=1, where ${cityName} is the user’s input.
+        Parses the JSON response and checks if there are results (i.e., the response array has length > 0).
+        Takes the first result from the response and extracts its GeoJSON data (the geojson property).
+        Verifies that the GeoJSON type is "Polygon" (ignore other types for the MVP).
+        Processes the GeoJSON as follows:
+            Calculate the Earth center of the city by averaging the longitude and latitude of all coordinates in the GeoJSON’s coordinates[0] array.
+            Define the scale factor as 6371 / 1737 (Earth’s radius divided by the Moon’s radius, approximately 3.67).
+            For each coordinate pair in the GeoJSON’s coordinates[0] array, compute new coordinates:
+                Subtract the Earth center longitude and latitude from the original coordinate’s longitude and latitude.
+                Multiply the differences by the scale factor to adjust the size to the Moon’s scale.
+                Use the resulting scaled coordinates directly (centered at [0, 0] on the map).
+            Create a new GeoJSON object with type: "Polygon" and the scaled coordinates as its coordinates[0] array.
+        If a cityLayer already exists, remove it from the map.
+        Create a new cityLayer using Leaflet’s GeoJSON functionality with the scaled GeoJSON, styled with:
+            Fill opacity of 0.5 for transparency.
+            Border color of blue.
+            Border weight of 2 pixels.
+        Add the new cityLayer to the map.
+    Add error handling in the event listener:
+        If the API returns no results, display an alert with the message "No results found for the city."
+        If the GeoJSON type is not "Polygon", display an alert with the message "City boundary is not a polygon."
+    Tricky Part (Code Provided): The scaling logic must be precise to ensure the city’s size is correctly proportional to the Moon. Use this exact calculation for each coordinate [lon, lat] in the GeoJSON:
+    javascript
 
-Ubuntu: sudo apt-get install gdal-bin
+    scaledLon = scale * (lon - earthCenterLon);
+    scaledLat = scale * (lat - earthCenterLat);
 
-Tile the Moon map:
+    where scale = 6371 / 1737, and [earthCenterLon, earthCenterLat] is the computed center of the original city coordinates.
 
-gdal2tiles.py -z 0-10 moon_map.tif tiles/
+Step 5: Implement the Clear Functionality
 
--z 0-10: Generates tiles for zoom levels 0 (fully zoomed out) to 10 (detailed).
+    Add an event listener to the "Clear" button (id="clear-btn") that:
+        Checks if cityLayer is not null.
+        If it exists, removes cityLayer from the map and sets cityLayer back to null.
 
-Output: A tiles/ folder with subfolders for each zoom level.
+Step 6: Test the Application Locally
 
-City Shape Simplification
-Tool: Mapshaper (online at https://mapshaper.org/ or CLI).
+    Save index.html with all the implemented code.
+    Open the file in a web browser (e.g., double-click it or serve it locally with a command like python -m http.server 8000 and visit http://localhost:8000).
+    Verify the following:
+        The Moon map loads, and you can pan and zoom it.
+        Entering a city name (e.g., "Paris") and clicking "Search" displays its scaled shape centered on the map.
+        Panning the map moves the Moon under the fixed city overlay.
+        Clicking "Clear" removes the city overlay.
 
-Action:
-Upload the city shapefile to Mapshaper.
+Notes for Executing LLMs
 
-Simplify by 20-30% (adjust the slider until the shape is simplified but recognizable).
-
-Export as GeoJSON for web use.
-
-Web Mapping Framework
-
-Library Choice
-Tool: Leaflet.js, a lightweight, open-source mapping library.
-
-Why: Supports custom tile layers (Moon map) and overlays (city shapes) with built-in pan/zoom controls.
-
-Setup
-Action:
-Create a project folder (e.g., moon-map-app/).
-
-Create index.html with this structure:
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Moon Map with City Overlay</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        #map { height: 600px; width: 100%; }
-    </style>
-</head>
-<body>
-    <div id="map"></div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="app.js"></script>
-</body>
-</html>
-
-Create an empty app.js file for JavaScript code.
-
-User Interface (UI) Design
-
-Map Controls
-Action: In app.js, initialize the Leaflet map with Moon tiles:
-
-var map = L.map('map', {
-    crs: L.CRS.Simple, // Simple coordinate system for the Moon
-    minZoom: 0,
-    maxZoom: 10
-}).setView([0, 0], 0);
-
-L.tileLayer('tiles/{z}/{x}/{y}.png', {
-    attribution: 'Moon data © NASA LRO',
-    noWrap: true
-}).addTo(map);
-
-L.control.scale({ metric: true, imperial: true }).addTo(map);
-
-Enables panning (click and drag) and zooming (mouse wheel).
-
-City Selection
-Action: Add a dropdown in index.html:
-
-<select id="city-select" style="position: absolute; top: 10px; left: 10px; z-index: 1000;">
-    <option value="">Select a City</option>
-    <option value="newyork.geojson">New York</option>
-    <option value="london.geojson">London</option>
-    <option value="tokyo.geojson">Tokyo</option>
-</select>
-
-Place corresponding GeoJSON files (e.g., newyork.geojson) in the project folder.
-
-Overlay Functionality
-Action: In app.js, add city overlay logic:
-
-var cityLayer = null;
-
-document.getElementById('city-select').addEventListener('change', function(e) {
-    if (cityLayer) map.removeLayer(cityLayer);
-    if (!e.target.value) return;
-
-    fetch(e.target.value)
-        .then(response => response.json())
-        .then(data => {
-            cityLayer = L.geoJSON(data, {
-                style: { color: '#ff0000', opacity: 0.5, fillOpacity: 0.3 },
-                interactive: true
-            }).addTo(map);
-
-            cityLayer.dragging = new L.Draggable(cityLayer);
-            cityLayer.dragging.enable();
-
-            map.fitBounds(cityLayer.getBounds());
-        });
-});
-
-Scaling and Coordinate Transformation
-
-Scale Calculation
-Fact: Moon’s circumference ≈ 10,921 km. At zoom level 0, assume 256 pixels span the width (≈ 42.7 km/pixel).
-
-Note: Distance per pixel halves with each zoom level increase.
-
-City Shape Scaling
-Action: In app.js, transform city coordinates:
-
-function scaleCity(geojson, zoom) {
-    var scaleFactor = 42.7 / Math.pow(2, zoom); // km per pixel
-    var moonScale = 111 / scaleFactor; // Rough degrees-to-km conversion
-    geojson.coordinates = geojson.coordinates.map(ring =>
-        ring.map(coord => [coord[1] * moonScale, coord[0] * moonScale])
-    );
-    return geojson;
-}
-
-fetch(e.target.value)
-    .then(response => response.json())
-    .then(data => {
-        var scaledData = scaleCity(JSON.parse(JSON.stringify(data)), map.getZoom());
-        cityLayer = L.geoJSON(scaledData, { /* style and dragging as above */ }).addTo(map);
-        map.fitBounds(cityLayer.getBounds());
-    });
-
-Testing and Optimization
-
-Action:
-Install Node.js and run locally: npx http-server.
-
-Test in Chrome/Firefox for panning, zooming, and dragging.
-
-Optimize slow performance by further simplifying GeoJSON in Mapshaper.
-
-Deployment
-
-Action:
-Push the project to a GitHub repository.
-
-Enable GitHub Pages in repository settings (main branch, /root folder).
-
-Access at https://<username>.github.io/<repo-name>/.
-
-User Guide
-
-Action: Add instructions to index.html:
-
-<p style="position: absolute; bottom: 10px; left: 10px; z-index: 1000;">
-    Select a city from the dropdown, then drag its shape over the Moon map to compare sizes. Zoom with the mouse wheel.
-</p>
+    API Usage: Use the USGS PWMS WMTS API and Nominatim API as specified. Do not change the URLs unless they fail to load, and report any issues without altering the plan.
+    Scaling: The provided scaling code snippet must be used exactly as shown to ensure accurate size representation. Beyond that, implement the coordinate processing logic as described.
+    GeoJSON Limitation: Assume city boundaries are single polygons. If a MultiPolygon is returned, the app may fail—note this limitation but proceed as is for the MVP.
+    Projection: The Moon map uses an equirectangular projection. Use Leaflet’s default CRS; if tiles don’t load, report the issue without changing the plan.
+    City Positioning: The city overlay must be fixed at the map’s center ([0, 0]), with users panning the Moon map underneath.
